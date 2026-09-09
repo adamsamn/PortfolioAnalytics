@@ -13,10 +13,16 @@ import streamlit as st
 from analysis import (
     BENCHMARK_OPTIONS,
     FUND_OPTIONS,
+    METRIC_DESCRIPTIONS,
     PLACEHOLDER_HOLDINGS,
+    RELATIVE_METRIC_FORMATS,
+    RISK_FREE_RATE,
+    STANDALONE_METRIC_FORMATS,
     compute_metrics,
+    compute_risk_metrics,
     correlation_matrix_fig,
     drawdown_fig,
+    format_risk_metrics_for_display,
     hit_rate_scatter_fig,
     load_weekly_returns,
     rolling_pairwise_corr_fig,
@@ -156,6 +162,7 @@ if run:
     st.session_state['analysis'] = {
         'fund': fund_label,
         'benchmark': benchmark,
+        'prices': prices,
         'returns': returns,
         'results_df': results_df,
         'drawdown_series': drawdown_series,
@@ -173,6 +180,7 @@ if 'analysis' not in st.session_state:
 data = st.session_state['analysis']
 fund_label = data['fund']
 benchmark = data['benchmark']
+prices = data['prices']
 returns = data['returns']
 results_df = data['results_df']
 drawdown_series = data['drawdown_series']
@@ -182,6 +190,35 @@ st.caption(
     f'Weekly returns from {returns.index.min().date()} to {returns.index.max().date()} '
     f'({len(returns)} observations).'
 )
+
+
+# ---------------------------------------------------------------------------
+# Risk metrics — fund and benchmark, standalone + relative-to-benchmark
+# ---------------------------------------------------------------------------
+
+st.markdown('### Risk Metrics')
+st.caption(f'Assumes a flat risk-free rate of {RISK_FREE_RATE:.1%} (not fetched live).')
+
+standalone_metrics, relative_metrics = compute_risk_metrics(returns, fund_label, benchmark)
+
+col_standalone, col_relative = st.columns([2, 1])
+with col_standalone:
+    st.markdown('**Standalone Metrics**')
+    st.dataframe(
+        format_risk_metrics_for_display(standalone_metrics, STANDALONE_METRIC_FORMATS),
+        use_container_width=True,
+    )
+with col_relative:
+    st.markdown('**Relative to Benchmark**')
+    st.dataframe(
+        format_risk_metrics_for_display(relative_metrics, RELATIVE_METRIC_FORMATS),
+        use_container_width=True,
+    )
+
+with st.expander('Metric definitions'):
+    for metric, description in METRIC_DESCRIPTIONS.items():
+        st.markdown(f'**{metric}** — {description}')
+
 
 tab_corr, tab_hit, tab_dd = st.tabs(['Correlation', 'Hit Rates', 'Drawdown'])
 
@@ -193,22 +230,12 @@ with tab_corr:
     )
 
     st.markdown('### Rolling Pairwise Correlation')
-    # Cap slider max at what's actually feasible given the loaded data
+    # Cap window at what's actually feasible given the loaded data
     max_window = max(13, min(78, len(returns) - 1))
     default_window = min(26, max_window)
-    window = st.slider(
-        'Rolling window (weeks)',
-        min_value=13,
-        max_value=max_window,
-        value=default_window,
-        step=1,
-        help=(
-            '13w (~3 months) is responsive but noisy; 26w (~6 months) is a balanced '
-            'default; 52w (1 year) smooths out short-term spikes.'
-        ),
-    )
+    window = default_window
     st.pyplot(
-        rolling_pairwise_corr_fig(returns, PLACEHOLDER_HOLDINGS, benchmark, window),
+        rolling_pairwise_corr_fig(returns, PLACEHOLDER_HOLDINGS, benchmark, prices, window),
         use_container_width=True,
     )
 
